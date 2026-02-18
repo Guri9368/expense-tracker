@@ -2,8 +2,23 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { CreateExpenseBody } from "@/types";
 
+async function ensureTable() {
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "Expense" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "amount_cents" INTEGER NOT NULL,
+      "category" TEXT NOT NULL,
+      "description" TEXT NOT NULL,
+      "date" DATETIME NOT NULL,
+      "created_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "idempotency_key" TEXT NOT NULL UNIQUE
+    )
+  `);
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Expense_category_idx" ON "Expense"("category")`);
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Expense_date_idx" ON "Expense"("date")`);
+}
+
 function rupeesToCents(amount: number): number {
-  // Round to avoid floating point issues: 99.99 rupees -> 9999 cents
   return Math.round(amount * 100);
 }
 
@@ -18,7 +33,6 @@ function formatExpense(expense: {
   return {
     id: expense.id,
     amount_cents: expense.amount_cents,
-    // Return amount in rupees for display convenience
     amount: expense.amount_cents / 100,
     category: expense.category,
     description: expense.description,
@@ -28,6 +42,8 @@ function formatExpense(expense: {
 }
 
 export async function POST(req: NextRequest) {
+  await ensureTable();
+
   const idempotencyKey = req.headers.get("Idempotency-Key");
 
   if (!idempotencyKey) {
@@ -46,7 +62,6 @@ export async function POST(req: NextRequest) {
 
   const { amount, category, description, date } = body;
 
-  // Validation
   const errors: Record<string, string> = {};
 
   if (amount === undefined || amount === null || isNaN(Number(amount))) {
@@ -75,7 +90,6 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Check idempotency: if key already exists, return the existing record
   const existing = await prisma.expense.findUnique({
     where: { idempotency_key: idempotencyKey },
   });
@@ -98,6 +112,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
+  await ensureTable();
+
   const { searchParams } = new URL(req.url);
   const category = searchParams.get("category");
   const sort = searchParams.get("sort");
