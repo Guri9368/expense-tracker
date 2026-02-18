@@ -13,6 +13,7 @@
     "db:studio": "prisma studio"
   },
   "dependencies": {
+    "@libsql/client": "^0.17.0",
     "@prisma/client": "^5.10.2",
     "next": "14.1.4",
     "react": "^18.2.0",
